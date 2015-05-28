@@ -1,96 +1,37 @@
-interface Modifier<T> {
-    (data: T): boolean;
+interface StreamModifier<A, B> {
+    (data: A, send: (B) => boolean): boolean
 }
 
-interface FilterFn<T> {
-    (data: T): boolean;
+function map<A, B>(fn: (A) => B): StreamModifier<A, B> {
+    return function(data: A, send: (B) => boolean): boolean {
+        return send(fn(data));
+    };
 }
 
-interface MapFn<A, B> {
-    (data: A): B;
-}
-
-interface ReduceFn<R, A> {
-    (prev: R, data: A): R;
-}
-
-export function filter<T> (
-        out: Modifier<T>,
-        filter_fn: FilterFn<T>): Modifier<T>
-    {
-    return function(data: T) {
-        if (filter_fn(data)) {
-            return out(data);
-        }
-    }
-}
-
-
-export function map<A, B>(out: Modifier<B>, map_fn: MapFn<A, B>): Modifier<A> {
-    return function(data: A) {
-        return out(map_fn(data))
-    }
-}
-
-export function dedup<A>(out: Modifier<A>): Modifier<A> {
-    var last: A = undefined;
-    return function (data: A) {
-        // TODO: replace this with _.deep_equals or something
-        if (data !== last) {
-            last = data;
-            return out(data);
-        }
-    }
-}
-
-export function reduce<R, T>(out: Modifier<R>, reduce_fn: ReduceFn<R, T>, initial: R): Modifier<T> {
-    return function(data: T) {
-        initial = reduce_fn(initial, data);
-        return out(initial);
-    }
-}
-
-export function partition<T>(out1: Modifier<T>, out2: Modifier<T>, partition_fn: FilterFn<T>): Modifier<T> {
-    return function(data: T) {
-        if (partition_fn(data)) {
-            return out1(data);
-        } else {
-            return out2(data);
-        }
-    }
-}
-
-export function interval(out: Modifier<void>, delta_t: number) {
-    var id = setInterval(function () {
-        if (out(null)) {
-            clearInterval(id);
-        }
-    }, delta_t);
-}
-
-export function interval_value<T>(out: Modifier<T>, delta_t: number, value: T) {
-    return interval(map(out, function(v: void) { return value; }), delta_t);
-}
-
-export function during<T>(out: Modifier<T>, during_function: FilterFn<T>): Modifier<T> {
-    return function(data: T) {
-        if (during_function(data)) {
-            return out(data);
+function reduce<A>(fn: (A) => boolean): StreamModifier<A, A> {
+    return function(data: A, send: (A) => boolean): boolean {
+        if (fn(data)) {
+            return send(data);
         } else {
             return true;
         }
     }
 }
 
-interval_value(
-    reduce(
-        during(
-            function(a) {console.log(a); return false },
-            function(a) { return a < 10 }
-        ),
-        function(a: number, b: number) { return a + b; },
-        0
-    ),
-    0,
-    1.0
-)
+function dedupe<A>(initial?: A): StreamModifier<A, A> {
+    return function(data: A, send: (A) => boolean): boolean {
+        if (data !== initial) {
+            initial = data;
+            return send(data);
+        } else {
+            return true;
+        }
+    }
+}
+
+function apply<A, R>(fn: (R, A) => R, initial: R): StreamModifier<A, R> {
+    return function(data: A, send: (R) => boolean): boolean {
+        initial = fn(initial, data);
+        return send(initial);
+    }
+}
